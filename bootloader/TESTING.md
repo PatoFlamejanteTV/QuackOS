@@ -185,6 +185,9 @@ Para testar o bootloader completamente, vamos criar um kernel mínimo que apenas
 
 ```bash
 cat > kernel_stub.asm << 'EOF'
+```
+
+```asm
 [BITS 64]
 [ORG 0x100000]
 
