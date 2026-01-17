@@ -88,36 +88,6 @@ inicio_stage2:
     jmp 0x18:protected_mode_inicio
 
 ; ==============================================================================
-; CÓDIGO EM PROTECTED MODE (32 bits)
-; ==============================================================================
-
-[BITS 32]
-protected_mode_inicio:
-    ; --- Configurar segment registers para protected mode ---
-    mov ax, 0x10        ; Data segment selector
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    mov esp, 0x90000    ; Stack em 576KB
-    
-    ; --- Mover kernel de 0x10000 para 0x100000 ---
-    mov esi, 0x10000    ; Origem (buffer temporário)
-    mov edi, 0x100000   ; Destino (1MB)
-    mov ecx, 16384      ; 16384 * 4 bytes = 64KB
-    rep movsd
-
-    ; --- Configurar paginação para long mode ---
-    call configurar_paginacao
-    
-    ; --- Entrar em long mode ---
-    call entrar_long_mode
-    
-    ; Não deveria chegar aqui
-    jmp $
-
-; ==============================================================================
 ; FUNÇÕES - REAL MODE (16 bits)
 ; ==============================================================================
 
@@ -269,7 +239,7 @@ carregar_kernel:
     push bp
     mov bp, sp
     
-    ; Carregar 128 setores (64KB) do kernel usando LBA
+    ; Carregar 512 setores (256KB) do kernel usando LBA
     ; Stage 2 ocupa 16 setores (LBA 1-16)
     ; Kernel começa em LBA 17
     
@@ -312,6 +282,37 @@ halt_real:
     cli
     hlt
     jmp halt_real
+
+; ==============================================================================
+; CÓDIGO EM PROTECTED MODE (32 bits)
+; ==============================================================================
+
+[BITS 32]
+protected_mode_inicio:
+    ; --- Configurar segment registers para protected mode ---
+    mov ax, 0x10        ; Data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, 0x90000    ; Stack em 576KB
+
+    ; --- Mover kernel de 0x10000 para 0x100000 ---
+    mov esi, 0x10000    ; Origem (buffer temporário)
+    mov edi, 0x100000   ; Destino (1MB)
+    mov ecx, 65536      ; 65536 * 4 bytes = 256KB
+    rep movsd
+
+    ; --- Configurar paginação para long mode ---
+    call configurar_paginacao
+
+    ; --- Entrar em long mode ---
+    call entrar_long_mode
+
+    ; Não deveria chegar aqui
+    jmp $
+
 
 ; ==============================================================================
 ; FUNÇÕES - PROTECTED MODE (32 bits)
@@ -463,7 +464,7 @@ boot_drive:     db 0
 kernel_dap:
     db 0x10             ; Tamanho
     db 0                ; Reservado
-    dw 128              ; Número de setores (64KB)
+    dw 512              ; Número de setores (256KB)
     dw 0x0000           ; Offset
     dw 0x1000           ; Segmento (0x1000:0x0000 = 0x10000)
     dd 17               ; LBA inicial (17)
