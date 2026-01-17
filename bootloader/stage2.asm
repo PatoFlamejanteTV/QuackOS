@@ -239,19 +239,54 @@ carregar_kernel:
     push bp
     mov bp, sp
     
-    ; Carregar 512 setores (256KB) do kernel usando LBA
-    ; Stage 2 ocupa 16 setores (LBA 1-16)
-    ; Kernel começa em LBA 17
-    
-    mov ah, 0x42            ; Extended Read
+    ; 1. Ler o primeiro setor do kernel para obter o header
+    ; DAP: [size(1), res(1), count(2), offset(2), segment(2), LBA_low(4), LBA_high(4)]
+    mov word [kernel_dap + 2], 1  ; count = 1
+    mov ah, 0x42                 ; Extended Read
     mov dl, [boot_drive]
     mov si, kernel_dap
     int 0x13
+    jc .erro
+
+    ; 2. Verificar magic number 'QKRN' em 0x1000:0x0004
+    ; O kernel foi carregado em 0x1000:0x0000 (0x10000 físico)
+    push ds
+    mov ax, 0x1000
+    mov ds, ax
+    mov eax, [0x0004]            ; 'QKRN' magic em offset 4
+    cmp eax, 0x4E524B51          ; "QKRN" em little-endian
+    pop ds
+    jne .erro_magic
+
+    ; 3. Extrair contagem de setores do header (offset 8)
+    push ds
+    mov ax, 0x1000
+    mov ds, ax
+    mov eax, [0x0008]            ; sector_count em offset 8
+    pop ds
     
+    test eax, eax
+    jz .erro
+    cmp eax, 1024                ; Limite de segurança: 512KB
+    jg .erro
+
+    mov [kernel_sector_count], ax
+    mov word [kernel_dap + 2], ax ; count = total setores do kernel
+
+    ; 4. Ler o kernel inteiro
+    mov ah, 0x42
+    mov dl, [boot_drive]
+    mov si, kernel_dap
+    int 0x13
     jc .erro
     
     pop bp
     ret
+
+.erro_magic:
+    mov si, msg_erro_magic
+    call print
+    jmp halt_real
     
 .erro:
     mov si, msg_erro_kernel
@@ -301,7 +336,10 @@ protected_mode_inicio:
     ; --- Mover kernel de 0x10000 para 0x100000 ---
     mov esi, 0x10000    ; Origem (buffer temporário)
     mov edi, 0x100000   ; Destino (1MB)
-    mov ecx, 65536      ; 65536 * 4 bytes = 256KB
+
+    ; Calcular número de dwords a copiar: (setores * 512) / 4 = setores * 128
+    movzx ecx, word [kernel_sector_count]
+    shl ecx, 7          ; ecx * 128
     rep movsd
 
     ; --- Configurar paginação para long mode ---
@@ -459,6 +497,7 @@ gdt_descriptor:
 ; ==============================================================================
 
 boot_drive:     db 0
+kernel_sector_count: dw 0
 
 ; Disk Address Packet (DAP) para carregar o kernel
 kernel_dap:
@@ -494,6 +533,7 @@ msg_kernel:         db 'Carregando kernel...', 13, 10, 0
 msg_pmode:          db 'Entrando em protected mode...', 13, 10, 0
 msg_erro_mem:       db 'ERRO: Falha ao detectar memoria', 13, 10, 0
 msg_erro_kernel:    db 'ERRO: Falha ao carregar kernel', 13, 10, 0
+msg_erro_magic:     db 'ERRO: Kernel magic invalido', 13, 10, 0
 
 ; ==============================================================================
 ; PADDING

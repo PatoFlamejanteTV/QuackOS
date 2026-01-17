@@ -55,7 +55,7 @@ print_warning() {
 check_dependencies() {
     print_step "Verificando dependências..."
     
-    local deps=("nasm" "ld" "dd" "make")
+    local deps=("nasm" "ld" "dd" "make" "objcopy")
     local missing=()
     
     for dep in "${deps[@]}"; do

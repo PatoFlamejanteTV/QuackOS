@@ -32,6 +32,22 @@
 ; SEÇÃO .text - CÓDIGO
 ; ==============================================================================
 
+section .text.header
+global qkern_header
+extern __kernel_sector_count
+
+; ==============================================================================
+; KERNEL HEADER (32 bytes - alinhado a setor para facilitar)
+; ==============================================================================
+qkern_header:
+    jmp qkern_inicio        ; Saltar para o início real do código (2 bytes)
+    align 4                 ; (2 bytes padding)
+    db 'QKRN'               ; Magic number (4 bytes)
+    dd __kernel_sector_count ; Tamanho em setores (4 bytes)
+    dq 0                    ; Reservado (8 bytes)
+    dq 0                    ; Reservado (8 bytes)
+    dq 0                    ; Reservado (8 bytes)
+
 section .text
 global qkern_inicio         ; Entry point exportado para o linker
 EXTERN stack_top            ; Definido em linker.ld (.stack); 16KB, ALIGN(16)
