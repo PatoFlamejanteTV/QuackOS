@@ -48,14 +48,37 @@ qkern_inicio:
     ; Não temos IDT configurada ainda, então interrupções causariam triple fault
     cli
 
-    ; --- Salvar boot_info ---
-    mov [boot_info_ptr], rdi
-
-    ; --- Configurar stack própria (linker.ld: .stack ALIGN(16), 16KB) ---
+    ; --- Configurar stack temporária para inicialização ---
     mov rsp, stack_top
     xor rbp, rbp
 
-    ; --- Configurar e carregar IDT (Fase 0.5: exceções → "EXCEPTION: #XX" em VGA) ---
+    ; --- Salvar boot_info ---
+    mov [boot_info_ptr], rdi
+
+    ; --- Configurar GDT e TSS ---
+    call gdt_configurar
+    call tss_configurar
+
+    ; --- Carregar GDT ---
+    lgdt [gdt_descriptor]
+
+    ; --- Reload de CS (far jump) ---
+    push 0x08                       ; Seletor de Kernel Code
+    lea rax, [rel .reload_cs]
+    push rax
+    retfq
+
+.reload_cs:
+    ; --- Carregar seletores de dados ---
+    mov ax, 0x10                    ; Seletor de Kernel Data
+    mov ds, ax
+    mov ss, ax
+
+    ; --- Carregar TSS ---
+    mov ax, 0x28                    ; Seletor de TSS
+    ltr ax
+
+    ; --- Configurar e carregar IDT ---
     call idt_configurar
     lidt [idt_descriptor]
 
@@ -124,7 +147,14 @@ idt_configurar:
     mov rax, [rsi + rcx*8]       ; endereço do stub
     mov [rdi], ax                ; offset 0-15
     mov word [rdi + 2], 0x08     ; selector
-    mov byte [rdi + 4], 0        ; IST
+
+    ; Configurar IST1 para Double Fault (vetor 8)
+    mov byte [rdi + 4], 0        ; IST default
+    cmp ecx, 8                   ; Se for #DF
+    jne .not_df
+    mov byte [rdi + 4], 1        ; Usar IST1
+.not_df:
+
     mov byte [rdi + 5], 0x8E     ; P=1, DPL=0, 64-bit int gate=0xE
     shr rax, 16
     mov [rdi + 6], ax            ; offset 16-31
@@ -136,6 +166,33 @@ idt_configurar:
     inc ecx
     cmp ecx, 256
     jb .idt_loop
+    ret
+
+; ==============================================================================
+; gdt_configurar: preenche o descritor de TSS na GDT (runtime)
+; ==============================================================================
+gdt_configurar:
+    mov rax, tss
+    mov word [gdt + 0x28 + 2], ax   ; Base bits 0-15
+    shr rax, 16
+    mov byte [gdt + 0x28 + 4], al   ; Base bits 16-23
+    mov byte [gdt + 0x28 + 7], ah   ; Base bits 24-31
+    shr rax, 16
+    mov dword [gdt + 0x28 + 8], eax ; Base bits 32-63
+
+    mov word [gdt + 0x28 + 0], 103  ; Limite (104 bytes - 1)
+    mov byte [gdt + 0x28 + 5], 0x89 ; P=1, DPL=0, Type=64-bit TSS (Available)
+    ret
+
+; ==============================================================================
+; tss_configurar: inicializa RSP0 e IST1 no TSS
+; ==============================================================================
+tss_configurar:
+    mov rax, stack_top
+    mov [tss + 4], rax              ; RSP0
+
+    mov rax, ist1_stack_top
+    mov [tss + 36], rax             ; IST1
     ret
 
 ; ==============================================================================
@@ -197,9 +254,9 @@ nibble_to_ascii:                ; AL in 0-15 → ASCII em AL
 .d: add al, '0'
     ret
 
-; --- Double fault: NÃO usa stack do CPU. RSP → df_stack_top, depois VGA e halt ---
+; --- Double fault: Usa IST1 (stack automática). Escreve "EXCEPTION: #DF" em VGA ---
 df_handler_direct:
-    mov rsp, df_stack_top
+    ; O RSP já foi trocado automaticamente pelo CPU para ist1_stack_top
     mov rdi, 0xB8000 + 160
     mov ah, 0x0F
     lea rsi, [msg_exception_df]
@@ -238,9 +295,12 @@ boot_info_ptr: resq 1
 ; IDT: 256 entradas × 16 bytes; preenchida em idt_configurar
 idt: resb 256 * 16
 
-; Stack para #DF: handler não usa a stack do CPU (pode estar corrompida)
-df_stack:   resb 64
-df_stack_top:
+; TSS (Task State Segment) - 104 bytes para 64-bit
+tss: resb 104
+
+; IST1 Stack (Stack de emergência para #DF)
+ist1_stack: resb 4096
+ist1_stack_top:
 
 ; ==============================================================================
 ; SEÇÃO .data - DADOS INICIALIZADOS
@@ -248,7 +308,27 @@ df_stack_top:
 
 section .data
 
-kernel_version: db "QKern 0.0.1-Fase0.5", 0
+kernel_version: db "QKern 0.0.1-Fase1A", 0
+
+; --- GDT DEFINITIVA ---
+; 0x00: Null
+; 0x08: Kernel Code (DPL 0, 64-bit)
+; 0x10: Kernel Data (DPL 0)
+; 0x18: User Code (DPL 3, 64-bit)
+; 0x20: User Data (DPL 3)
+; 0x28: TSS (16 bytes, ocupa 2 entradas)
+gdt:
+    dq 0x0000000000000000 ; Null
+    dq 0x00209A0000000000 ; Kernel Code: L=1, P=1, DPL=0, S=1, Type=0xA
+    dq 0x0000920000000000 ; Kernel Data: P=1, DPL=0, S=1, Type=0x2
+    dq 0x0020FA0000000000 ; User Code: L=1, P=1, DPL=3, S=1, Type=0xA
+    dq 0x0000F20000000000 ; User Data: P=1, DPL=3, S=1, Type=0x2
+    dq 0x0000000000000000 ; TSS Low (preenchido em gdt_configurar)
+    dq 0x0000000000000000 ; TSS High (preenchido em gdt_configurar)
+
+gdt_descriptor:
+    dw (7 * 8) - 1        ; Limite: 6 entradas + 1 (TSS ocupa 2)
+    dq gdt
 
 ; --- Tabela de endereços dos 256 stubs (preenchida em assemble/link; sem &/>> em símbolos) ---
 isr_stub_table:
