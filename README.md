@@ -74,7 +74,7 @@ Esses documentos são **normativos**.
 
 ## Licença
 
-Apache 2.0.
+MIT.
 
 ---
 
