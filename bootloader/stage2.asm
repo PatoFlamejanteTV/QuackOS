@@ -242,10 +242,15 @@ carregar_kernel:
     ; 1. Ler o primeiro setor do kernel para obter o header
     ; DAP: [size(1), res(1), count(2), offset(2), segment(2), LBA_low(4), LBA_high(4)]
     mov word [kernel_dap + 2], 1  ; count = 1
+
+    push ds                      ; Garantir DS=0 para DAP
+    xor ax, ax
+    mov ds, ax
+    mov si, kernel_dap
     mov ah, 0x42                 ; Extended Read
     mov dl, [boot_drive]
-    mov si, kernel_dap
     int 0x13
+    pop ds
     jc .erro
 
     ; 2. Verificar magic number 'QKRN' em 0x1000:0x0004
@@ -262,12 +267,12 @@ carregar_kernel:
     push ds
     mov ax, 0x1000
     mov ds, ax
-    mov eax, [0x0008]            ; sector_count em offset 8
+    mov ax, [0x0008]            ; sector_count em offset 8 (leitura 16-bit)
     pop ds
     
-    test eax, eax
+    test ax, ax
     jz .erro
-    cmp eax, 1024                ; Limite de segurança: 512KB
+    cmp ax, 1024                ; Limite de segurança: 512KB
     jg .erro
 
     mov [kernel_sector_count], ax
@@ -280,10 +285,14 @@ carregar_kernel:
     mov dword [kernel_dap + 8], 17   ; LBA low (kernel começa em 17)
     mov dword [kernel_dap + 12], 0   ; LBA high
 
-    mov ah, 0x42
-    mov dl, [boot_drive]
+    push ds                      ; Garantir DS=0 para DAP
+    xor ax, ax
+    mov ds, ax
     mov si, kernel_dap
+    mov ah, 0x42                 ; Extended Read
+    mov dl, [boot_drive]
     int 0x13
+    pop ds
     jc .erro
     
     pop bp
@@ -506,6 +515,7 @@ boot_drive:     db 0
 kernel_sector_count: dw 0
 
 ; Disk Address Packet (DAP) para carregar o kernel
+align 16
 kernel_dap:
     db 0x10             ; Tamanho
     db 0                ; Reservado
