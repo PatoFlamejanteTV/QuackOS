@@ -271,9 +271,15 @@ carregar_kernel:
     jg .erro
 
     mov [kernel_sector_count], ax
-    mov word [kernel_dap + 2], ax ; count = total setores do kernel
 
     ; 4. Ler o kernel inteiro
+    ; Resetar DAP para garantir leitura limpa
+    mov word [kernel_dap + 2], ax   ; count = total setores
+    mov word [kernel_dap + 4], 0x0000 ; offset
+    mov word [kernel_dap + 6], 0x1000 ; segment
+    mov dword [kernel_dap + 8], 17   ; LBA low (kernel começa em 17)
+    mov dword [kernel_dap + 12], 0   ; LBA high
+
     mov ah, 0x42
     mov dl, [boot_drive]
     mov si, kernel_dap

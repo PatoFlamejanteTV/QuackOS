@@ -38,12 +38,18 @@ extern __kernel_sector_count
 
 ; ==============================================================================
 ; KERNEL HEADER (32 bytes - alinhado a setor para facilitar)
+; ------------------------------------------------------------------------------
+; ABI de Boot do QuackOS (Offsets Fixos):
+;   0x00: jmp qkern_inicio (Instrução de salto para o entrypoint)
+;   0x04: Magic number 'QKRN' (0x4E524B51 em little-endian)
+;   0x08: Kernel sector count (4 bytes, sectors including header)
+;   0x0C: Reservado (Futuras flags ou entrypoints)
 ; ==============================================================================
 qkern_header:
     jmp qkern_inicio        ; Saltar para o início real do código (2 bytes)
     align 4                 ; (2 bytes padding)
-    db 'QKRN'               ; Magic number (4 bytes)
-    dd __kernel_sector_count ; Tamanho em setores (4 bytes)
+    db 'QKRN'               ; Magic number (4 bytes) - Offset 0x04
+    dd __kernel_sector_count ; Tamanho em setores (4 bytes) - Offset 0x08
     dq 0                    ; Reservado (8 bytes)
     dq 0                    ; Reservado (8 bytes)
     dq 0                    ; Reservado (8 bytes)
