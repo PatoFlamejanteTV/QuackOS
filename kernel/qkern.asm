@@ -17,6 +17,15 @@
 ;   - Syscalls
 ;   - Drivers
 ;   - Multitarefa
+;
+; ------------------------------------------------------------------------------
+; Pré-requisitos (garantidos pelo bootloader na Fase 0):
+;   - Identity mapping ativo para memória baixa. O kernel assume que 0xB8000
+;     (VGA), a stack e as page tables estão mapeados. Se o identity mapping
+;     for removido antes, VGA e stack quebram.
+; ------------------------------------------------------------------------------
+; CLI permanente na Fase 0: interrupções nunca são reativadas. NMI ainda pode
+; ocorrer; HLT nunca retorna; debug com timer inexistente. Fase 1: IDT.
 ; ==============================================================================
 
 [BITS 64]                   ; Código 64 bits (long mode)
@@ -27,6 +36,7 @@
 
 section .text
 global qkern_inicio         ; Entry point exportado para o linker
+EXTERN stack_top            ; Definido em linker.ld (.stack); 16KB, ALIGN(16)
 
 ; ==============================================================================
 ; ENTRY POINT DO KERNEL
@@ -41,23 +51,28 @@ qkern_inicio:
     cli
 
     ; --- Salvar boot_info ---
-    ; RDI já contém o ponteiro para boot_info
-    ; Vamos armazená-lo em uma variável global para uso futuro
     mov [boot_info_ptr], rdi
 
-    ; --- Configurar stack própria ---
-    ; Vamos usar uma stack de 16KB definida no BSS
-    ; A stack cresce para baixo, então apontamos RSP para o final
-    lea rsp, [kernel_stack_top]
-    
-    ; Zerar RBP para marcar o início da stack (útil para debugging)
+    ; --- Configurar stack própria (linker.ld: .stack ALIGN(16), 16KB) ---
+    ; Stack em região mapeada; RSP alinhado antes de qualquer call
+    mov rsp, stack_top
     xor rbp, rbp
 
+    ; --- Validar boot_info (ABI: RDI, layout do stage2) ---
+    ; boot_info.mem_total em [rdi+0]; se 0, bootloader não preencheu
+    test rdi, rdi
+    jz .boot_info_invalido
+    cmp qword [rdi + 0], 0
+    jz .boot_info_invalido
+
     ; --- Escrever mensagem em VGA ---
-    ; VGA text mode buffer está em 0xB8000 (physical)
-    ; Cada caractere ocupa 2 bytes: [ASCII][Atributo]
-    ; Atributo: 0x0F = fundo preto, texto branco brilhante
-    
+    ; VGA em 0xB8000; [ASCII][Atributo]; 0x0F = fundo preto, texto branco
+    lea rsi, [mensagem]
+    call vga_escrever_mensagem
+    jmp .halt_loop
+
+.boot_info_invalido:
+    lea rsi, [mensagem_boot_info_invalido]
     call vga_escrever_mensagem
 
     ; --- Loop infinito com HLT ---
@@ -69,16 +84,16 @@ qkern_inicio:
     jmp .halt_loop              ; Garantir que nunca sai do halt (paranoico)
 
 ; ==============================================================================
-; FUNÇÃO: Escrever mensagem no VGA
+; FUNÇÃO: vga_escrever_mensagem
 ; ==============================================================================
-; Escreve "QuackOS kernel alive" no canto superior esquerdo da tela
+; Entrada: RSI = ponteiro para string null-terminated
+; Escreve no canto superior esquerdo da tela (0xB8000).
 ; ==============================================================================
 
 vga_escrever_mensagem:
-    ; Preparar registradores
     mov rdi, 0xB8000            ; RDI = endereço base do VGA buffer
-    lea rsi, [mensagem]         ; RSI = ponteiro para a mensagem
     mov ah, 0x0F                ; AH = atributo (fundo preto, texto branco brilhante)
+    ; RSI já contém o ponteiro para a string (passado pelo caller)
 
 .loop:
     lodsb                       ; Carregar próximo byte de [RSI] em AL, incrementar RSI
@@ -101,8 +116,9 @@ vga_escrever_mensagem:
 
 section .rodata
 
-; Mensagem a ser exibida (null-terminated)
+; Mensagens (null-terminated)
 mensagem: db "QuackOS kernel alive", 0
+mensagem_boot_info_invalido: db "boot_info invalido", 0
 
 ; ==============================================================================
 ; SEÇÃO .bss - DADOS NÃO INICIALIZADOS
@@ -111,12 +127,9 @@ mensagem: db "QuackOS kernel alive", 0
 section .bss
 
 ; Ponteiro para struct boot_info (passado pelo bootloader)
-boot_info_ptr: resq 1           ; Reservar 1 qword (8 bytes)
+boot_info_ptr: resq 1
 
-; Stack do kernel (16KB)
-align 16                        ; Alinhar stack em 16 bytes (exigido pela ABI)
-kernel_stack_bottom: resb 16384 ; Reservar 16KB
-kernel_stack_top:               ; Topo da stack (stack cresce para baixo)
+; Stack: definida em linker.ld (.stack 16KB). Símbolo stack_top.
 
 ; ==============================================================================
 ; SEÇÃO .data - DADOS INICIALIZADOS

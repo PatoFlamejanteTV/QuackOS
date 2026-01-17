@@ -70,6 +70,18 @@ SECTIONS
         __bss_end = .;
     }
 
+    /* ==================================================================
+     * SEÇÃO .stack - STACK DO KERNEL (16KB, ALIGN(16))
+     * ==================================================================
+     * Em região mapeada (identity mapping do bootloader). Não colide com
+     * .text, .bss ou page tables. stack_top usado em qkern.asm: mov rsp, stack_top
+     * ================================================================== */
+    .stack ALIGN(16) : {
+        stack_bottom = .;
+        . += 16K;
+        stack_top = .;
+    }
+
     /* Fim do kernel (usado para calcular tamanho) */
     __kernel_end = .;
     __kernel_size = __kernel_end - __kernel_start;
