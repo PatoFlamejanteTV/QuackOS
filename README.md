@@ -1,6 +1,6 @@
 # QuackOS
 
-QuackOS é um sistema operacional **UNIX-like**, educacional e experimental, projetado para ser **simples, legível e totalmente especificado**.
+QuackOS é um sistema operacional **UNIX-like** (_levemente inspirado no Plan9_), educacional e experimental, projetado para ser **simples, legível e totalmente especificado**.
 
 Ele foi pensado para ser implementável **do zero**, inclusive por inteligências artificiais, sem dependências modernas desnecessárias.
 
