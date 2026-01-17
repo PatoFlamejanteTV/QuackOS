@@ -85,7 +85,7 @@ inicio_stage2:
     mov cr0, eax
     
     ; Far jump para limpar pipeline e entrar em protected mode
-    jmp 0x08:protected_mode_inicio
+    jmp 0x18:protected_mode_inicio
 
 ; ==============================================================================
 ; CÓDIGO EM PROTECTED MODE (32 bits)
@@ -102,6 +102,12 @@ protected_mode_inicio:
     mov ss, ax
     mov esp, 0x90000    ; Stack em 576KB
     
+    ; --- Mover kernel de 0x10000 para 0x100000 ---
+    mov esi, 0x10000    ; Origem (buffer temporário)
+    mov edi, 0x100000   ; Destino (1MB)
+    mov ecx, 16384      ; 16384 * 4 bytes = 64KB
+    rep movsd
+
     ; --- Configurar paginação para long mode ---
     call configurar_paginacao
     
@@ -263,21 +269,13 @@ carregar_kernel:
     push bp
     mov bp, sp
     
-    ; Carregar 64 setores (32KB) do kernel
+    ; Carregar 128 setores (64KB) do kernel usando LBA
     ; Stage 2 ocupa 16 setores (LBA 1-16)
     ; Kernel começa em LBA 17
     
-    mov ax, 0x1000          ; Segment 0x1000 (0x10000 físico)
-    mov es, ax
-    xor bx, bx              ; Offset 0
-    
-    mov al, 64              ; 64 setores
-    mov dl, [boot_drive]    ; Drive
-    mov ch, 0               ; Cilindro 0
-    mov cl, 18              ; Setor 18 (LBA 17, +1)
-    mov dh, 0               ; Cabeça 0
-    
-    mov ah, 0x02            ; Função: Read Sectors
+    mov ah, 0x42            ; Extended Read
+    mov dl, [boot_drive]
+    mov si, kernel_dap
     int 0x13
     
     jc .erro
@@ -425,19 +423,27 @@ gdt_inicio:
     ; Entrada nula (obrigatória)
     dq 0
     
-    ; Code segment (0x08)
-    dw 0xFFFF       ; Limite 0-15
-    dw 0x0000       ; Base 0-15
-    db 0x00         ; Base 16-23
-    db 10011010b    ; Flags: Present, Ring 0, Code, Executable, Readable
-    db 11001111b    ; Flags: Granularity, 32-bit, Limite 16-19
-    db 0x00         ; Base 24-31
-    
-    ; Data segment (0x10)
+    ; 0x08: Kernel Code 64-bit
     dw 0xFFFF
     dw 0x0000
     db 0x00
-    db 10010010b    ; Flags: Present, Ring 0, Data, Writable
+    db 10011010b        ; P=1, DPL=0, S=1, Code, R=1
+    db 10101111b        ; G=1, L=1, AVL=0, Limit 16-19
+    db 0x00
+    
+    ; 0x10: Kernel Data 64-bit / Protected Mode Data
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10010010b        ; P=1, DPL=0, S=1, Data, W=1
+    db 11001111b        ; G=1, D/B=1, Limit 16-19
+    db 0x00
+
+    ; 0x18: Protected Mode Code (32-bit)
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10011010b
     db 11001111b
     db 0x00
 
@@ -452,6 +458,17 @@ gdt_descriptor:
 ; ==============================================================================
 
 boot_drive:     db 0
+
+; Disk Address Packet (DAP) para carregar o kernel
+kernel_dap:
+    db 0x10             ; Tamanho
+    db 0                ; Reservado
+    dw 128              ; Número de setores (64KB)
+    dw 0x0000           ; Offset
+    dw 0x1000           ; Segmento (0x1000:0x0000 = 0x10000)
+    dd 17               ; LBA inicial (17)
+    dd 0                ; LBA high
+
 mmap_count:     dw 0
 mmap_total:     dq 0
 mmap_livre:     dq 0
