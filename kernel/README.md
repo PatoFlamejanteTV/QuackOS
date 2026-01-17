@@ -1,23 +1,31 @@
 # QKern - Kernel do QuackOS
 
-## Fase 0: Kernel Mínimo
+## Fase 0: Kernel Mínimo ✅
 
-Esta é a **Fase 0** do QKern, um kernel mínimo que demonstra:
+Kernel mínimo que demonstra: ELF64, entry `qkern_inicio`, `boot_info*` em RDI, stack 16KB, VGA 0xB8000, HLT.
 
-✅ Compilação como ELF64  
-✅ Entry point em `qkern_inicio`  
-✅ Recebimento de `struct boot_info*` em RDI  
-✅ Configuração de stack própria (16KB)  
-✅ Escrita em VGA text mode (0xB8000)  
-✅ Loop infinito com HLT  
+## Fase 0.5: IDT Mínima ✅
 
-### Não Implementado (por design)
+**IDT mínima** para deixar o kernel **observável** em vez de triple fault em qualquer exceção:
 
-❌ Interrupções (IDT)  
-❌ Heap  
-❌ Syscalls  
-❌ Drivers  
-❌ Multitarefa  
+✅ **IDT** com 256 entradas; preenchida em runtime a partir de `isr_stub_table`  
+✅ **Stubs**: 256 vetores; cada um `push N; jmp common`. Vetor **#8** → `jmp df_handler_direct` (não usa stack do CPU)  
+✅ **common_exception_handler**: imprime `EXCEPTION: #XX` em hex na **linha 2** do VGA; `cli`; `hlt`  
+✅ **Double fault (#8)**: `df_handler_direct` usa `df_stack` (64 bytes) própria; imprime `EXCEPTION: #DF`; evita triple fault se o handler padrão falhar  
+✅ **lidt** após stack e `idt_configurar`; exceções (#DE, #BP, #PF, etc.) passam a ser capturadas  
+
+### Testar a IDT
+
+No `qkern.asm`, após a mensagem de sucesso, descomente:
+
+- `int3` → deve aparecer `EXCEPTION: #03` na linha 2  
+- `xor eax,eax; div eax` → `EXCEPTION: #00` (divide by zero)  
+
+### Ainda não (Fase 1)
+
+❌ GDT definitiva  
+❌ `sti` e interrupções reais (timer, teclado)  
+❌ Transição ASM → C  
 
 ## Estrutura de Arquivos
 
@@ -94,8 +102,9 @@ O kernel é carregado em **1MB (0x100000)** para evitar conflitos com:
 |----------|--------------------------------|-------------|
 | `.text`  | Código executável              | 4KB         |
 | `.rodata`| Dados somente leitura          | 4KB         |
-| `.data`  | Dados inicializados            | 4KB         |
-| `.bss`   | Dados não inicializados (zero) | 4KB         |
+| `.data`  | Dados inicializados (IDT desc, isr_stub_table) | 4KB |
+| `.bss`   | Dados não inicializados (idt, boot_info_ptr, df_stack) | 4KB |
+| `.stack` | Stack do kernel 16KB           | 16          |
 
 ## Convenção de Chamada
 
@@ -109,9 +118,8 @@ O kernel segue a **System V AMD64 ABI**:
 
 1. **Entry point** (`qkern_inicio`):
    - Desabilita interrupções (`cli`)
-   - Salva ponteiro `boot_info` de RDI
-   - Configura stack própria de 16KB
-   - Zera RBP
+   - Salva `boot_info`, configura stack 16KB, zera RBP
+   - **Fase 0.5**: `idt_configurar` (preenche IDT), `lidt`; valida `boot_info`
 
 2. **Escrita em VGA**:
    - Buffer VGA em 0xB8000 (physical)
@@ -125,7 +133,7 @@ O kernel segue a **System V AMD64 ABI**:
 
 ## Próximas Fases
 
-- **Fase 1**: GDT própria, IDT básica, tratamento de exceções
+- **Fase 1**: GDT definitiva, `sti`, timer, início da transição ASM → C
 - **Fase 2**: Gerenciamento de memória (PMM, VMM)
 - **Fase 3**: Heap (kmalloc/kfree)
 - **Fase 4**: Drivers básicos (teclado, timer)
