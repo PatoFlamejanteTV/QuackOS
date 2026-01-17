@@ -6,7 +6,7 @@ void qk_imprimir(const char *str);
 
 void qk_main() {
     // Limpa a tela (modo texto VGA 80x25)
-    uint16_t *vga = (uint16_t *)0xB8000;
+    volatile uint16_t *vga = (volatile uint16_t *)0xB8000;
     for (int i = 0; i < 80 * 25; i++) {
         vga[i] = (0x07 << 8) | ' ';
     }
@@ -15,14 +15,14 @@ void qk_main() {
     qk_imprimir("\nOla, mundo 64 bits!");
 
     while (1) {
-        __asm__("hlt");
+        __asm__ volatile("hlt");
     }
 }
 
 void qk_imprimir(const char *str) {
     static int x = 0;
     static int y = 0;
-    uint16_t *vga = (uint16_t *)0xB8000;
+    volatile uint16_t *vga = (volatile uint16_t *)0xB8000;
 
     for (int i = 0; str[i] != '\0'; i++) {
         if (str[i] == '\n') {

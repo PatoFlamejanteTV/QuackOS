@@ -6,6 +6,9 @@
 [org 0x7c00]
 
 inicio:
+    ; Salva o número do drive de boot
+    mov [boot_drive], dl
+
     ; Configura registradores de segmento
     xor ax, ax
     mov ds, ax
@@ -25,6 +28,7 @@ inicio:
     mov dh, 0       ; Cabeça 0
     mov cl, 2       ; Setor 2 (setores BIOS começam em 1, MBR é 1)
     mov bx, 0x7e00  ; Destino: logo após o MBR
+    mov dl, [boot_drive]
     int 0x13
     jc erro_leitura
 
@@ -48,6 +52,7 @@ imprimir_texto:
 
 msg_carregando db "QuackOS: Carregando Stage 2...", 13, 10, 0
 msg_erro       db "Erro ao carregar Stage 2!", 0
+boot_drive     db 0
 
 times 510-($-$$) db 0
 dw 0xaa55

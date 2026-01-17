@@ -8,20 +8,43 @@ stage2_inicio:
     mov si, msg_stage2
     call imprimir_texto_16
 
+    ; Habilita A20
+    call habilitar_a20
+
     ; Carrega o Kernel (QKern)
     ; O Kernel começa no setor 6 (setor 1 MBR, setores 2-5 Stage 2)
     ; Vamos carregar 64 setores por enquanto (32KB)
+    mov ax, 0x1000
+    mov es, ax
+    xor bx, bx
+    mov cl, 6       ; Setor inicial
+    mov al, 64      ; Total de setores
+.loop_leitura:
+    push ax
     mov ah, 0x02
-    mov al, 64
+    mov al, 1       ; Lê um setor por vez para simplicidade e robustez
     mov ch, 0
     mov dh, 0
-    mov cl, 6
-    mov bx, 0x1000  ; Carrega temporariamente em 0x1000:0000 (0x10000)
-    mov es, bx
-    xor bx, bx
+    ; cl já tem o setor
+    mov dl, [boot_drive]
     int 0x13
     jc erro_leitura_kernel
 
+    pop ax
+    dec al
+    jz .fim_leitura
+
+    ; Próximo destino
+    add bx, 512
+    jnz .sem_carry_segmento
+    mov dx, es
+    add dx, 0x1000
+    mov es, dx
+.sem_carry_segmento:
+    inc cl          ; Próximo setor (simplificado: assume que cabe no cilindro)
+    jmp .loop_leitura
+
+.fim_leitura:
     ; Transição para Modo Protegido (32 bits)
     cli
     lgdt [gdt_descriptor]
@@ -38,6 +61,11 @@ stage2_32bits:
     mov fs, ax
     mov gs, ax
     mov ss, ax
+
+    ; Verifica A20 antes de mover o kernel
+    call verificar_a20
+    or al, al
+    jz erro_a20
 
     ; Move o kernel para 0x100000 (1MB) - local final esperado pelo linker
     mov esi, 0x10000
@@ -96,6 +124,58 @@ erro_leitura_kernel:
     call imprimir_texto_16
     jmp $
 
+erro_a20:
+    mov si, msg_erro_a20
+    call imprimir_texto_16
+    jmp $
+
+habilitar_a20:
+    ; Fast A20
+    in al, 0x92
+    or al, 2
+    out 0x92, al
+    ret
+
+verificar_a20:
+    push ds
+    push es
+    push di
+    push si
+
+    xor ax, ax
+    mov ds, ax
+    not ax
+    mov es, ax
+
+    mov di, 0x0500
+    mov si, 0x0510
+
+    mov al, [ds:di]
+    push ax
+    mov al, [es:si]
+    push ax
+
+    mov byte [ds:di], 0x00
+    mov byte [es:si], 0xFF
+
+    cmp byte [ds:di], 0xFF
+
+    pop ax
+    mov [es:si], al
+    pop ax
+    mov [ds:di], al
+
+    mov ax, 0
+    je .fim
+    mov ax, 1
+
+.fim:
+    pop si
+    pop di
+    pop es
+    pop ds
+    ret
+
 imprimir_texto_16:
     lodsb
     or al, al
@@ -108,6 +188,8 @@ imprimir_texto_16:
 
 msg_stage2 db "QuackOS: Stage 2 ativo. Entrando em Modo Longo...", 13, 10, 0
 msg_erro_kernel db "Erro ao carregar QKern!", 0
+msg_erro_a20 db "Erro: A20 desabilitado!", 0
+boot_drive equ 0x7dfd ; Endereço onde stage1 salvou o drive (relativo ao org 0x7c00 e db no fim)
 
 ; GDT para Modo Protegido (32 bits)
 gdt_inicio:
