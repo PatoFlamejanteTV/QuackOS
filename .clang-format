@@ -1,0 +1,58 @@
+---
+# QuackOS C/C++ Code Style - clang-format configuration
+# Based on LLVM style with kernel-specific adjustments
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Pointer and reference alignment
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# Braces
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Indentation
+IndentCaseLabels: false
+IndentPPDirectives: AfterHash
+NamespaceIndentation: None
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+
+# Comments
+ReflowComments: true
+SpacesBeforeTrailingComments: 1
+
+# Includes
+SortIncludes: true
+IncludeBlocks: Preserve
+
+# Function parameters
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackParameters: false
+
+# Line breaks
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+
+# Other
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
