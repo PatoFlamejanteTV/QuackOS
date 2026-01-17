@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Exemplo de pre-commit hook para QuackOS
+# Para usar, copie este arquivo para .git/hooks/pre-commit e torne-o executável:
+#   cp tools/lint/pre-commit.example .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+
+set -e
+
+echo "🔍 Executando linters antes do commit..."
+
+# Diretório do projeto
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+cd "$PROJECT_ROOT"
+
+# Lista de arquivo modificados/adicionados
+CHANGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$CHANGED_FILES" ]; then
+    echo "✅ Nenhum arquivo para verificar."
+    exit 0
+fi
+
+# Flags para controlar quais linters executar
+RUN_C_LINTER=false
+RUN_ASM_LINTER=false
+RUN_SHELL_LINTER=false
+RUN_MARKDOWN_LINTER=false
+RUN_MAKEFILE_LINTER=false
+
+# Verifica quais tipos de arquivos foram modificados
+while IFS= read -r file; do
+    case "$file" in
+        *.c|*.h|*.cpp|*.hpp)
+            RUN_C_LINTER=true
+            ;;
+        *.asm|*.s|*.S)
+            RUN_ASM_LINTER=true
+            ;;
+        *.sh)
+            RUN_SHELL_LINTER=true
+            ;;
+        *.md)
+            RUN_MARKDOWN_LINTER=true
+            ;;
+        Makefile|*.mk|GNUmakefile)
+            RUN_MAKEFILE_LINTER=true
+            ;;
+    esac
+done <<< "$CHANGED_FILES"
+
+# Executa apenas os linters necessários
+FAILED=false
+
+if [ "$RUN_C_LINTER" = true ]; then
+    echo "  → Verificando C/C++..."
+    if ! ./tools/lint/lint-c.sh; then
+        FAILED=true
+    fi
+fi
+
+if [ "$RUN_ASM_LINTER" = true ]; then
+    echo "  → Verificando Assembly..."
+    if ! ./tools/lint/lint-asm.sh; then
+        FAILED=true
+    fi
+fi
+
+if [ "$RUN_SHELL_LINTER" = true ]; then
+    echo "  → Verificando Shell Scripts..."
+    if ! ./tools/lint/lint-shell.sh; then
+        FAILED=true
+    fi
+fi
+
+if [ "$RUN_MARKDOWN_LINTER" = true ]; then
+    echo "  → Verificando Markdown..."
+    if ! ./tools/lint/lint-markdown.sh; then
+        FAILED=true
+    fi
+fi
+
+if [ "$RUN_MAKEFILE_LINTER" = true ]; then
+    echo "  → Verificando Makefiles..."
+    if ! ./tools/lint/lint-makefile.sh; then
+        FAILED=true
+    fi
+fi
+
+if [ "$FAILED" = true ]; then
+    echo ""
+    echo "❌ Linting falhou! Corrija os erros antes de fazer commit."
+    echo ""
+    echo "💡 Dica: Para pular esta verificação (não recomendado):"
+    echo "   git commit --no-verify"
+    exit 1
+fi
+
+echo "✅ Todos os linters passaram!"
+exit 0
