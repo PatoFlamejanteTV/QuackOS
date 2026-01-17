@@ -74,7 +74,7 @@ Esses documentos são **normativos**.
 
 ## Licença
 
-Definida futuramente.
+Apache 2.0.
 
 ---
 
