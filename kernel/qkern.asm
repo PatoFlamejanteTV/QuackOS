@@ -46,7 +46,7 @@ extern __kernel_sector_count
 ;   0x0C: Reservado (Futuras flags ou entrypoints)
 ; ==============================================================================
 qkern_header:
-    jmp qkern_inicio        ; Saltar para o início real do código (2 bytes)
+    jmp short qkern_inicio  ; Saltar para o início real do código (2 bytes)
     align 4                 ; (2 bytes padding)
     db 'QKRN'               ; Magic number (4 bytes) - Offset 0x04
     dd __kernel_sector_count ; Tamanho em setores (4 bytes) - Offset 0x08
