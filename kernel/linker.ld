@@ -39,6 +39,7 @@ SECTIONS
      * SEÇÃO .text - CÓDIGO EXECUTÁVEL
      * ================================================================== */
     .text ALIGN(4K) : {
+        KEEP(*(.text.header))
         *(.text)
         *(.text.*)
     }
@@ -82,9 +83,16 @@ SECTIONS
         stack_top = .;
     }
 
-    /* Fim do kernel (usado para calcular tamanho) */
+    /* Fim das seções carregáveis (usado para calcular o tamanho do binário) */
+    __kernel_bin_end = .;
+    __kernel_bin_size = __kernel_bin_end - __kernel_start;
+
+    /* Fim do kernel (incluindo BSS e Stack) */
     __kernel_end = .;
     __kernel_size = __kernel_end - __kernel_start;
+
+    /* Símbolo para o header do kernel */
+    __kernel_sector_count = (__kernel_bin_size + 511) / 512;
 
     /* ==================================================================
      * DESCARTE - SEÇÕES NÃO NECESSÁRIAS

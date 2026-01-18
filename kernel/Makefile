@@ -22,13 +22,14 @@ LDFLAGS = -T linker.ld -nostdlib -static
 ASM_SRC = qkern.asm
 OBJ = qkern.o
 KERNEL = qkern.elf
+KERNEL_BIN = qkern.bin
 
 # ------------------------------------------------------------------------------
 # REGRAS
 # ------------------------------------------------------------------------------
 
 # Regra padrão: compilar o kernel
-all: $(KERNEL)
+all: $(KERNEL_BIN)
 
 # Compilar assembly -> object file
 $(OBJ): $(ASM_SRC)
@@ -41,6 +42,13 @@ $(KERNEL): $(OBJ) linker.ld
 	$(LD) $(LDFLAGS) $(OBJ) -o $@
 	@echo "✓ QKern compilado com sucesso: $(KERNEL)"
 	@echo ""
+
+# Converter ELF64 -> Binary plano
+$(KERNEL_BIN): $(KERNEL)
+	@echo "[OBJCOPY] $< -> $@"
+	objcopy -O binary $< $@
+	@echo "✓ QKern binário gerado: $(KERNEL_BIN)"
+	@echo ""
 	@echo "Informações do kernel:"
 	@file $(KERNEL)
 	@size $(KERNEL)
@@ -51,7 +59,7 @@ $(KERNEL): $(OBJ) linker.ld
 # Limpar arquivos gerados
 clean:
 	@echo "Limpando build artifacts..."
-	rm -f $(OBJ) $(KERNEL)
+	rm -f $(OBJ) $(KERNEL) $(KERNEL_BIN)
 	@echo "✓ Limpo"
 
 # Recompilar do zero

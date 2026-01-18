@@ -85,31 +85,7 @@ inicio_stage2:
     mov cr0, eax
     
     ; Far jump para limpar pipeline e entrar em protected mode
-    jmp 0x08:protected_mode_inicio
-
-; ==============================================================================
-; CÓDIGO EM PROTECTED MODE (32 bits)
-; ==============================================================================
-
-[BITS 32]
-protected_mode_inicio:
-    ; --- Configurar segment registers para protected mode ---
-    mov ax, 0x10        ; Data segment selector
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    mov esp, 0x90000    ; Stack em 576KB
-    
-    ; --- Configurar paginação para long mode ---
-    call configurar_paginacao
-    
-    ; --- Entrar em long mode ---
-    call entrar_long_mode
-    
-    ; Não deveria chegar aqui
-    jmp $
+    jmp 0x18:protected_mode_inicio
 
 ; ==============================================================================
 ; FUNÇÕES - REAL MODE (16 bits)
@@ -263,27 +239,69 @@ carregar_kernel:
     push bp
     mov bp, sp
     
-    ; Carregar 64 setores (32KB) do kernel
-    ; Stage 2 ocupa 16 setores (LBA 1-16)
-    ; Kernel começa em LBA 17
-    
-    mov ax, 0x1000          ; Segment 0x1000 (0x10000 físico)
-    mov es, ax
-    xor bx, bx              ; Offset 0
-    
-    mov al, 64              ; 64 setores
-    mov dl, [boot_drive]    ; Drive
-    mov ch, 0               ; Cilindro 0
-    mov cl, 18              ; Setor 18 (LBA 17, +1)
-    mov dh, 0               ; Cabeça 0
-    
-    mov ah, 0x02            ; Função: Read Sectors
+    ; 1. Ler o primeiro setor do kernel para obter o header
+    ; DAP: [size(1), res(1), count(2), offset(2), segment(2), LBA_low(4), LBA_high(4)]
+    mov word [kernel_dap + 2], 1  ; count = 1
+
+    push ds                      ; Garantir DS=0 para DAP
+    xor ax, ax
+    mov ds, ax
+    mov si, kernel_dap
+    mov ah, 0x42                 ; Extended Read
+    mov dl, [boot_drive]
     int 0x13
+    pop ds
+    jc .erro
+
+    ; 2. Verificar magic number 'QKRN' em 0x1000:0x0004
+    ; O kernel foi carregado em 0x1000:0x0000 (0x10000 físico)
+    push ds
+    mov ax, 0x1000
+    mov ds, ax
+    mov eax, [0x0004]            ; 'QKRN' magic em offset 4
+    cmp eax, 0x4E524B51          ; "QKRN" em little-endian
+    pop ds
+    jne .erro_magic
+
+    ; 3. Extrair contagem de setores do header (offset 8)
+    push ds
+    mov ax, 0x1000
+    mov ds, ax
+    mov ax, [0x0008]            ; sector_count em offset 8 (leitura 16-bit)
+    pop ds
     
+    test ax, ax
+    jz .erro
+    cmp ax, 1024                ; Limite de segurança: 512KB
+    jg .erro
+
+    mov [kernel_sector_count], ax
+
+    ; 4. Ler o kernel inteiro
+    ; Resetar DAP para garantir leitura limpa
+    mov word [kernel_dap + 2], ax   ; count = total setores
+    mov word [kernel_dap + 4], 0x0000 ; offset
+    mov word [kernel_dap + 6], 0x1000 ; segment
+    mov dword [kernel_dap + 8], 17   ; LBA low (kernel começa em 17)
+    mov dword [kernel_dap + 12], 0   ; LBA high
+
+    push ds                      ; Garantir DS=0 para DAP
+    xor ax, ax
+    mov ds, ax
+    mov si, kernel_dap
+    mov ah, 0x42                 ; Extended Read
+    mov dl, [boot_drive]
+    int 0x13
+    pop ds
     jc .erro
     
     pop bp
     ret
+
+.erro_magic:
+    mov si, msg_erro_magic
+    call print
+    jmp halt_real
     
 .erro:
     mov si, msg_erro_kernel
@@ -314,6 +332,40 @@ halt_real:
     cli
     hlt
     jmp halt_real
+
+; ==============================================================================
+; CÓDIGO EM PROTECTED MODE (32 bits)
+; ==============================================================================
+
+[BITS 32]
+protected_mode_inicio:
+    ; --- Configurar segment registers para protected mode ---
+    mov ax, 0x10        ; Data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, 0x90000    ; Stack em 576KB
+
+    ; --- Mover kernel de 0x10000 para 0x100000 ---
+    mov esi, 0x10000    ; Origem (buffer temporário)
+    mov edi, 0x100000   ; Destino (1MB)
+
+    ; Calcular número de dwords a copiar: (setores * 512) / 4 = setores * 128
+    movzx ecx, word [kernel_sector_count]
+    shl ecx, 7          ; ecx * 128
+    rep movsd
+
+    ; --- Configurar paginação para long mode ---
+    call configurar_paginacao
+
+    ; --- Entrar em long mode ---
+    call entrar_long_mode
+
+    ; Não deveria chegar aqui
+    jmp $
+
 
 ; ==============================================================================
 ; FUNÇÕES - PROTECTED MODE (32 bits)
@@ -425,19 +477,27 @@ gdt_inicio:
     ; Entrada nula (obrigatória)
     dq 0
     
-    ; Code segment (0x08)
-    dw 0xFFFF       ; Limite 0-15
-    dw 0x0000       ; Base 0-15
-    db 0x00         ; Base 16-23
-    db 10011010b    ; Flags: Present, Ring 0, Code, Executable, Readable
-    db 11001111b    ; Flags: Granularity, 32-bit, Limite 16-19
-    db 0x00         ; Base 24-31
-    
-    ; Data segment (0x10)
+    ; 0x08: Kernel Code 64-bit
     dw 0xFFFF
     dw 0x0000
     db 0x00
-    db 10010010b    ; Flags: Present, Ring 0, Data, Writable
+    db 10011010b        ; P=1, DPL=0, S=1, Code, R=1
+    db 10101111b        ; G=1, L=1, AVL=0, Limit 16-19
+    db 0x00
+    
+    ; 0x10: Kernel Data 64-bit / Protected Mode Data
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10010010b        ; P=1, DPL=0, S=1, Data, W=1
+    db 11001111b        ; G=1, D/B=1, Limit 16-19
+    db 0x00
+
+    ; 0x18: Protected Mode Code (32-bit)
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10011010b
     db 11001111b
     db 0x00
 
@@ -452,6 +512,19 @@ gdt_descriptor:
 ; ==============================================================================
 
 boot_drive:     db 0
+kernel_sector_count: dw 0
+
+; Disk Address Packet (DAP) para carregar o kernel
+align 16
+kernel_dap:
+    db 0x10             ; Tamanho
+    db 0                ; Reservado
+    dw 512              ; Número de setores (256KB)
+    dw 0x0000           ; Offset
+    dw 0x1000           ; Segmento (0x1000:0x0000 = 0x10000)
+    dd 17               ; LBA inicial (17)
+    dd 0                ; LBA high
+
 mmap_count:     dw 0
 mmap_total:     dq 0
 mmap_livre:     dq 0
@@ -476,6 +549,7 @@ msg_kernel:         db 'Carregando kernel...', 13, 10, 0
 msg_pmode:          db 'Entrando em protected mode...', 13, 10, 0
 msg_erro_mem:       db 'ERRO: Falha ao detectar memoria', 13, 10, 0
 msg_erro_kernel:    db 'ERRO: Falha ao carregar kernel', 13, 10, 0
+msg_erro_magic:     db 'ERRO: Kernel magic invalido', 13, 10, 0
 
 ; ==============================================================================
 ; PADDING

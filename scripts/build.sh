@@ -55,7 +55,7 @@ print_warning() {
 check_dependencies() {
     print_step "Verificando dependências..."
     
-    local deps=("nasm" "ld" "dd" "make")
+    local deps=("nasm" "ld" "dd" "make" "objcopy")
     local missing=()
     
     for dep in "${deps[@]}"; do
@@ -123,7 +123,7 @@ integrate_disk_image() {
     print_header "Integrando Imagem de Disco"
     
     local DISK_IMG="$BOOTLOADER_DIR/build/quackos.img"
-    local KERNEL_BIN="$KERNEL_DIR/qkern.elf"
+    local KERNEL_BIN="$KERNEL_DIR/qkern.bin"
     
     # Verificar se os arquivos existem
     if [ ! -f "$DISK_IMG" ]; then
@@ -163,7 +163,12 @@ copy_to_build_dir() {
     # Copiar kernel
     if [ -f "$KERNEL_DIR/qkern.elf" ]; then
         cp "$KERNEL_DIR/qkern.elf" "$BUILD_DIR/qkern.elf"
-        print_success "Kernel copiado para $BUILD_DIR/qkern.elf"
+        print_success "Kernel (ELF) copiado para $BUILD_DIR/qkern.elf"
+    fi
+
+    if [ -f "$KERNEL_DIR/qkern.bin" ]; then
+        cp "$KERNEL_DIR/qkern.bin" "$BUILD_DIR/qkern.bin"
+        print_success "Kernel (Binário) copiado para $BUILD_DIR/qkern.bin"
     fi
 }
 
@@ -177,7 +182,7 @@ show_build_info() {
     echo -e "${CYAN}Estrutura da imagem de disco:${NC}"
     echo "  LBA 0      : MBR (boot.bin, 512 bytes)"
     echo "  LBA 1-16   : Stage 2 (stage2.bin, 8KB)"
-    echo "  LBA 17+    : Kernel (qkern.elf)"
+    echo "  LBA 17+    : Kernel (qkern.bin)"
     echo ""
     
     if [ -f "$BUILD_DIR/quackos.img" ]; then

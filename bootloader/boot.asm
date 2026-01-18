@@ -33,6 +33,10 @@ inicio:
     mov ds, ax
     mov es, ax
     mov ss, ax
+
+    ; --- Salvar o drive de boot passado pela BIOS em DL ---
+    ; Agora que DS está zerado, podemos salvar em [drive] com segurança
+    mov [drive], dl
     
     ; --- Configurar stack ---
     ; Stack cresce para baixo a partir de 0x7C00
@@ -75,7 +79,7 @@ inicio:
     
     ; Passar informações ao Stage 2
     mov dl, [drive]     ; DL = drive de boot
-    jmp 0x0000:0x7E00   ; Saltar para Stage 2
+    jmp 0x0000:0x7E04   ; Saltar para Stage 2 (pular assinatura "QOS2")
 
 ; ==============================================================================
 ; TRATAMENTO DE ERROS
